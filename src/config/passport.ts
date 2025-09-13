@@ -6,13 +6,18 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // Guard against missing credentials to avoid runtime crash
-const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL } = process.env;
+const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL } =
+  process.env;
 
-export const googleAuthEnabled = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
+export const googleAuthEnabled = Boolean(
+  GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET
+);
 
 if (!googleAuthEnabled) {
   // eslint-disable-next-line no-console
-  console.warn("Google OAuth disabled: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env to enable.");
+  console.warn(
+    "Google OAuth disabled: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env to enable."
+  );
 } else {
   passport.use(
     new GoogleStrategy(
