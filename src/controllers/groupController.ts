@@ -337,13 +337,11 @@ export const getLeaderboard = async (req: AuthRequest, res: Response) => {
   const groupId = req.params.id;
   const userId = req.user?.id;
   if (!userId) {
-    return res
-      .status(401)
-      .json({
-        success: false,
-        message: "Unauthorized",
-        error: { code: "UNAUTHORIZED" },
-      });
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+      error: { code: "UNAUTHORIZED" },
+    });
   }
   const page = Math.max(parseInt((req.query.page as string) || "1", 10), 1);
   const limit = Math.min(
@@ -360,26 +358,22 @@ export const getLeaderboard = async (req: AuthRequest, res: Response) => {
   try {
     const group = await StudyGroup.findById(groupId);
     if (!group) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Group not found",
-          error: { code: "GROUP_NOT_FOUND" },
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Group not found",
+        error: { code: "GROUP_NOT_FOUND" },
+      });
     }
     if (
       !(group.members as mongoose.Types.ObjectId[]).some(
         (m) => m && m.toString() === userId
       )
     ) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Forbidden",
-          error: { code: "FORBIDDEN" },
-        });
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+        error: { code: "FORBIDDEN" },
+      });
     }
 
     const activeGoal = await GroupGoal.findOne({
@@ -475,54 +469,43 @@ export const getLeaderboard = async (req: AuthRequest, res: Response) => {
 
     res.json(response);
   } catch (error: any) {
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Server Error",
-        error: { code: "SERVER_ERROR", details: error.message },
-      });
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: { code: "SERVER_ERROR", details: error.message },
+    });
   }
 };
 
-// @desc    Group Progress toward active goal
-// @route   GET /api/groups/:id/progress
-// @access  Private (member)
 export const getProgress = async (req: AuthRequest, res: Response) => {
   const groupId = req.params.id;
   const userId = req.user?.id;
   if (!userId) {
-    return res
-      .status(401)
-      .json({
-        success: false,
-        message: "Unauthorized",
-        error: { code: "UNAUTHORIZED" },
-      });
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+      error: { code: "UNAUTHORIZED" },
+    });
   }
   try {
     const group = await StudyGroup.findById(groupId);
     if (!group) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Group not found",
-          error: { code: "GROUP_NOT_FOUND" },
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Group not found",
+        error: { code: "GROUP_NOT_FOUND" },
+      });
     }
     if (
       !(group.members as mongoose.Types.ObjectId[]).some(
         (m) => m && m.toString() === userId
       )
     ) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Forbidden",
-          error: { code: "FORBIDDEN" },
-        });
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+        error: { code: "FORBIDDEN" },
+      });
     }
 
     const goal = await GroupGoal.findOne({
@@ -531,13 +514,11 @@ export const getProgress = async (req: AuthRequest, res: Response) => {
       archived: false,
     });
     if (!goal) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "No active goal",
-          error: { code: "NO_ACTIVE_GOAL" },
-        });
+      return res.status(404).json({
+        success: false,
+        message: "No active goal",
+        error: { code: "NO_ACTIVE_GOAL" },
+      });
     }
 
     const key = cacheKey("progress", groupId);
@@ -559,12 +540,48 @@ export const getProgress = async (req: AuthRequest, res: Response) => {
 
     const totals = agg[0] || { totalQuestions: 0, totalTime: 0 };
 
+
+    const memberCount =
+      (group.members as mongoose.Types.ObjectId[]).length || 1;
     const progressValue =
       goal.metric === "questionsSolved"
         ? totals.totalQuestions
         : totals.totalTime;
-    const percentage =
-      goal.target > 0 ? Math.min(100, (progressValue / goal.target) * 100) : 0;
+
+    let percentage: number;
+    let relativeAverage: number | undefined;
+    if (goal.metric === "questionsSolved") {
+      // Compute per-user solved counts to derive relative average vs top performer
+      const perUserAgg = await GroupMemberActivity.aggregate([
+        { $match: match },
+        { $group: { _id: "$user", solved: { $sum: 1 } } },
+      ]);
+      const solvedArray: number[] = perUserAgg.map((d: any) => d.solved);
+      const topSolved = solvedArray.length ? Math.max(...solvedArray) : 0;
+      if (topSolved > 0 && memberCount > 0) {
+        relativeAverage =
+          (solvedArray.reduce((acc, v) => acc + v / topSolved, 0) /
+            memberCount) *
+          100;
+      } else {
+        relativeAverage = 0;
+      }
+      // Use relativeAverage as displayed percentage (matches requested 50% when only one member contributes)
+      percentage = Number((relativeAverage || 0).toFixed(2));
+    } else {
+      // timeSpent metric keeps previous aggregate vs target semantics
+      percentage =
+        goal.target > 0
+          ? Math.min(100, (progressValue / goal.target) * 100)
+          : 0;
+    }
+
+    const perMemberAverage =
+      goal.metric === "questionsSolved"
+        ? memberCount > 0
+          ? Number((progressValue / memberCount).toFixed(2))
+          : 0
+        : undefined;
 
     const response = {
       success: true,
@@ -579,13 +596,21 @@ export const getProgress = async (req: AuthRequest, res: Response) => {
           deadline: goal.deadline,
           recurring: goal.recurring,
         },
+        group: { size: memberCount },
         totals: {
           questionsSolved: totals.totalQuestions,
           timeSpent: totals.totalTime,
         },
         progress: {
-          value: progressValue,
-          percentage: Number(percentage.toFixed(2)),
+          aggregate: progressValue,
+          // average raw solved per member
+          perMemberAverage,
+          // average percentage of top performer across members
+          relativeAverage:
+            relativeAverage !== undefined
+              ? Number(relativeAverage.toFixed(2))
+              : undefined,
+          percentage, // now equals relativeAverage for questionsSolved
         },
       },
     };
@@ -594,13 +619,11 @@ export const getProgress = async (req: AuthRequest, res: Response) => {
 
     res.json(response);
   } catch (error: any) {
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Server Error",
-        error: { code: "SERVER_ERROR", details: error.message },
-      });
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: { code: "SERVER_ERROR", details: error.message },
+    });
   }
 };
 

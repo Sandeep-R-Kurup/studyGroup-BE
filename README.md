@@ -168,15 +168,35 @@ Caching: 60s Redis.
 ### Progress
 
 GET /api/groups/:id/progress
-Resp:
+Updated response (reflects new relative percentage logic):
 
 ```
 {
-  "goal": { "id":"..", "title":"..", "metric":"questionsSolved", "target":100, "deadline":"..", "recurring":"weekly" },
-  "totals": { "questionsSolved":12, "timeSpent":3600 },
-  "progress": { "value":12, "percentage":12 }
+  "goal": {
+    "id":"...",
+    "title":"Solve 100 questions",
+    "subjects": ["arrays"],
+    "metric":"questionsSolved",
+    "target":100,
+    "deadline":"2025-09-30T23:59:59.000Z",
+    "recurring":"weekly"
+  },
+  "group": { "size": 4 },
+  "totals": { "questionsSolved": 32, "timeSpent": 8400 },
+  "progress": {
+    "aggregate": 32,              // total solved/time across group (metric-dependent)
+    "perMemberAverage": 8,         // raw average solved per member (questionsSolved metric only)
+    "relativeAverage": 62.5,       // mean( eachMemberSolved / topSolved ) * 100
+    "percentage": 62.5             // displayed % (== relativeAverage for questionsSolved; for timeSpent = aggregate/target * 100 capped)
+  }
 }
 ```
+
+Field notes:
+
+- relativeAverage / percentage (questionsSolved): If only one member contributes all solves, each contributing member ratio=1, non-contributors=0. Example: 1 of 2 members solves all => (1 + 0)/2 \* 100 = 50%.
+- percentage (timeSpent metric): classic completion = min(100, aggregateTime / target \* 100).
+- perMemberAverage omitted for timeSpent metric.
 
 Caching: 60s Redis.
 
